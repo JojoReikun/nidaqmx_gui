@@ -28,6 +28,7 @@ import nidaqmx
 from nidaqmx import constants, Task
 from nidaqmx import stream_readers
 from nidaqmx import stream_writers
+import numpy as np
 
 
 class WorkerSignals(QtCore.QObject):
@@ -182,6 +183,7 @@ class nidaqmx_gui_mainWindow(QtWidgets.QMainWindow):
         root.withdraw()  # use to hide tkinter window
 
         current_path = os.getcwd()
+        self.set_units()
 
         if self.ui.lineEdit_OpenCalib.text is not None:
             current_path = self.calib_file
@@ -193,23 +195,24 @@ class nidaqmx_gui_mainWindow(QtWidgets.QMainWindow):
             self.calib_file = selected_path
             self.log_info("opened calibration file at: \n" + self.calib_file)
 
-        self.ui.lineEdit_OpenCalib.setText(self.calib_file)
-
         root.destroy()
 
-        # read calibration file and calibrate
-        self.set_units()
-        self.log_info("\nforce units: " + self.force_units +
-                      "\ntorque units: " + self.torque_units)
         # overwrites force and torque units with calib file units if user chose 'None'
-        self.calibration_matrix, self.force_units, self.torque_units, self.number_of_gages = calibration(self.calib_file, self.force_units, self.torque_units)
-
-        # enable record button:
-        self.ui.pushButton_Record.setEnabled(True)
+        self.calibration_matrix, self.force_units, self.torque_units, self.number_of_gages = calibration(
+            self.calib_file, self.force_units, self.torque_units)
 
     def open_calib_file(self):
         worker = Worker(self.open_calib_file_threaded)
         self.threadpool.start(worker)
+
+        self.ui.lineEdit_OpenCalib.setText(self.calib_file)
+        # read calibration file and calibrate
+
+        self.log_info("\nforce units: " + self.force_units +
+                      "\ntorque units: " + self.torque_units)
+
+        # enable record button:
+        self.ui.pushButton_Record.setEnabled(True)
 
 
     """
@@ -221,50 +224,33 @@ class nidaqmx_gui_mainWindow(QtWidgets.QMainWindow):
         activated when engaging the RECORD button. Will continuously record data until Stopped/triggered.
         :return:
         """
-        import numpy as np
-
         self.set_timing_variables()
 
         with nidaqmx.Task() as task:
-            # for i in range(int(self.number_of_gages)):
-                # first_channel = int(self.first_channel)
-                # channel = self.device_number + "/" + "ai" + str(first_channel+i)
-                # print(self.device_number + "/" + "ai" + str(first_channel+i))
-            task.ai_channels.add_ai_voltage_chan(self.device_number + "/" + "ai" + self.first_channel + ":" + self.number_of_gages,
+            for i in range(int(self.number_of_gages)):
+                first_channel = int(self.first_channel)
+                channel = self.device_number + "/" + "ai" + str(first_channel+i)
+                print(channel)
+                task.ai_channels.add_ai_voltage_chan(self.device_number + "/" + "ai" + str(int(self.first_channel)+i),
                                                  min_val=-10, max_val=10)
 
-            task.timing.cfg_samp_clk_timing(rate=self.sample_frequency, samps_per_chan=10)
+            # task.ai_channels.add_ai_voltage_chan(self.device_number + "/" + "ai" + self.first_channel + ":" + self.number_of_gages,
+            #                                      min_val=-10, max_val=10)
 
-            # set an input_buf_size
-            samples_per_buffer = float(self.sample_frequency // 30)  # 30 hz update
+            task.timing.cfg_samp_clk_timing(rate=float(self.sample_frequency), samps_per_chan=int(self.buffer_size),
+                                            sample_mode=constants.AcquisitionType.FINITE)
 
-            reader = stream_readers.AnalogMultiChannelReader(task.in_stream)
-            writer = stream_writers.AnalogMultiChannelWriter(task.out_stream)
+            data = task.read(number_of_samples_per_channel=int(self.buffer_size))
+            data = np.array(data)
+            print("data in voltage: ", data)
 
-            def reading_task_callback(task_idx, event_type, num_samples, callback_data=None):
-                """After data has been read into the NI buffer this callback is called to read in the data from the buffer.
+            # calibrate data:
+            data_calib = self.calibration_matrix.dot(data)      # TODO: debug
+            print("data in hopefully N: ", data_calib)
 
-                This callback is for working with the task callback register_every_n_samples_acquired_into_buffer_event.
-
-                Args:
-                    task_idx (int): Task handle index value
-                    event_type (nidaqmx.constants.EveryNSamplesEventType): ACQUIRED_INTO_BUFFER
-                    num_samples (int): Number of samples that was read into the buffer.
-                    callback_data (object)[None]: No idea. Documentation says: The callback_data parameter contains the value
-                        you passed in the callback_data parameter of this function.
-                """
-                buffer = np.zeros((self.number_of_gages, num_samples), dtype=np.float32)
-                reader.read_many_sample(buffer, num_samples, timeout=3.0)
-
-                # Convert the data from channel as a row order to channel as a column
-                data = buffer.T.astype(np.float32)
-
-                # Do something with the data
-                print(data)
-
-            task.register_every_n_samples_acquired_into_buffer_event(samples_per_buffer, reading_task_callback)
 
     def record_forces(self):
+        print("pressed")
         worker = Worker(self.record_forces_threaded)
         self.threadpool.start(worker)
 
@@ -282,6 +268,7 @@ class nidaqmx_gui_mainWindow(QtWidgets.QMainWindow):
         now = datetime.datetime.now()
         self.ui.listWidget_info.addItem(now.strftime("%H:%M:%S") + " [WARNING]  " + info)
         self.ui.listWidget_info.sortItems(QtCore.Qt.DescendingOrder)
+
 
 
 app = QtWidgets.QApplication([])

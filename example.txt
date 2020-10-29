@@ -1,0 +1,29 @@
+# # set an input_buf_size
+            # samples_per_buffer = float(self.sample_frequency) / 30  # 30 hz update
+            #
+            # reader = stream_readers.AnalogMultiChannelReader(task.in_stream)
+            # writer = stream_writers.AnalogMultiChannelWriter(task.out_stream)
+            #
+            # def reading_task_callback(task_idx, event_type, num_samples, callback_data=None):
+            #     """After data has been read into the NI buffer this callback is called to read in the data from the buffer.
+            #
+            #     This callback is for working with the task callback register_every_n_samples_acquired_into_buffer_event.
+            #
+            #     Args:
+            #         task_idx (int): Task handle index value
+            #         event_type (nidaqmx.constants.EveryNSamplesEventType): ACQUIRED_INTO_BUFFER
+            #         num_samples (int): Number of samples that was read into the buffer.
+            #         callback_data (object)[None]: No idea. Documentation says: The callback_data parameter contains the value
+            #             you passed in the callback_data parameter of this function.
+            #     """
+            #     print('interesse')
+            #     buffer = np.zeros((self.number_of_gages, num_samples), dtype=np.float32)
+            #     reader.read_many_sample(buffer, num_samples, timeout=1.0)
+            #
+            #     # Convert the data from channel as a row order to channel as a column
+            #     data = buffer.T.astype(np.float32)
+            #
+            #     # Do something with the data
+            #     print(data)
+            #
+            # task.register_every_n_samples_acquired_into_buffer_event(int(samples_per_buffer), reading_task_callback)
