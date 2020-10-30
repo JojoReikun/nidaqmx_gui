@@ -224,35 +224,52 @@ class nidaqmx_gui_mainWindow(QtWidgets.QMainWindow):
         activated when engaging the RECORD button. Will continuously record data until Stopped/triggered.
         :return:
         """
+        # TODO: make trigger channel definable by user
         self.set_timing_variables()
 
-        with nidaqmx.Task() as task:
-            for i in range(int(self.number_of_gages)):
-                first_channel = int(self.first_channel)
-                channel = self.device_number + "/" + "ai" + str(first_channel+i)
-                print(channel)
-                task.ai_channels.add_ai_voltage_chan(self.device_number + "/" + "ai" + str(int(self.first_channel)+i),
+        # create two tasks, one for analogue channels (forces and torques), one for digital channels (trigger)
+        ai_task = Task()
+        di_task = Task()
+
+        # add channels to respective tasks:
+        for i in range(int(self.number_of_gages)):
+            first_channel = int(self.first_channel)
+            channel = self.device_number + "/" + "ai" + str(first_channel + i)
+            print(channel)
+            ai_task.ai_channels.add_ai_voltage_chan(self.device_number + "/" + "ai" + str(int(self.first_channel) + i),
                                                  min_val=-10, max_val=10)
 
-            # task.ai_channels.add_ai_voltage_chan(self.device_number + "/" + "ai" + self.first_channel + ":" + self.number_of_gages,
-            #                                      min_val=-10, max_val=10)
+        di_task.di_channels.add_di_chan("Dev1/PFI1")  # digital trigger
 
-            task.timing.cfg_samp_clk_timing(rate=float(self.sample_frequency), samps_per_chan=int(self.buffer_size),
-                                            sample_mode=constants.AcquisitionType.FINITE)
+        # configure channels:
+        ai_task.timing.cfg_samp_clk_timing(rate=float(self.sample_frequency), samps_per_chan=int(self.buffer_size),
+                                        sample_mode=constants.AcquisitionType.CONTINUOUS)
 
-            data = task.read(number_of_samples_per_channel=int(self.buffer_size))
-            data = np.array(data)
-            print("data in voltage: ", data)
+        di_task.triggers.reference_trigger.cfg_dig_edge_ref_trig(trigger_source="Dev1/PFI1", pretrigger_samples=2,
+                                                                 trigger_edge=constants.Edge.FALLING)
 
-            # calibrate data:
-            data_calib = self.calibration_matrix.dot(data)      # TODO: debug
-            print("data in hopefully N: ", data_calib)
+        # start reading data:
+        ai_task.start()
+        data = ai_task.read(number_of_samples_per_channel=int(self.buffer_size), timeout=10.)
+        di_task.control(action=ai_task.stop())
 
+        data = np.array(data)
+        print("data in voltage: ", data)
+
+        # calibrate data:
+    # data_calib = self.calibration_matrix.dot(data)      # TODO: debug
+    # print("data in hopefully N: ", data_calib)
 
     def record_forces(self):
         print("pressed")
         worker = Worker(self.record_forces_threaded)
         self.threadpool.start(worker)
+
+    def stop_recording(self, task, data):
+        task.stop
+        print(data)
+        self.ui.pushButton_Record.setStyleSheet(QPushButton)
+
 
 
     """
